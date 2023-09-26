@@ -1,0 +1,367 @@
+---
+title: "Predicting Wins for Baseball Game Using Multiple Linear Regression"
+author: "Umer Farooq"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::readthedown:
+    highlight: kate
+---
+
+```{r setup, include=FALSE}
+## Global options
+knitr::opts_chunk$set(cache = TRUE)
+```
+
+
+```{r  include=FALSE}
+library(tidyverse)
+library(reshape2)
+library(ggplot2)
+library(GGally)
+library(psych)
+library(mice)
+```
+
+## **INTRODUCTION:**
+
+In this particular problem two data sets i.e. training and testing, are provided for Base Ball game. The idea of this study is to explore the training data set by checking the dimension of data set, carrying out descriptive summary statistics and to plots different features against the target variable and also check out the correlation between them. After that we have to prepare our data set for training a model. In order to do that we have to take care of any missing values in the data set and also to address the outliers. Once our data is prepared then we can go ahead and create different models using the features we found more statistically significant. After training the model we will go ahead and use the testing data set to predict the target variable. So Before any further due let's kickoff this session by data exploration: 
+
+## **DATA EXPLORATION:**
+
+In this phase we explore the data and will get to know the data more before going straight towards the preparation or modeling. data explorations helps us understand what we are dealing with. Since the data set provided is about a Base ball game and usually in sports there is a lot of misconception about what are the real indicators of a team wining. As a data scientist our job is to find out those indicators and how they can effect the overall performance that could lead to win or lose for team using past data. In order to achieve that you have to have solid knowledge about the data you are dealing with. That is why data exploration holds a great impact on the overall modeling. Let's start our data exploration by loading the data set into our markdown.
+
+### **Loading Data:**
+
+The data set provided has been uploaded to github repository from where it has been loaded into the markdown using the code chunk below. The reason why it has uploaded to the github is to keep the work reproducible.
+
+```{r}
+training <- read.csv("https://raw.githubusercontent.com/Umerfarooq122/Data_sets/main/moneyball-training-data.csv")
+```
+
+Now our data set has been loaded into the environment. Let's display the first few rows of our data set.
+
+```{r}
+knitr::kable(head(training))
+```
+
+Everything looks fine but on a first glance we can see that there is an `INDEX` column which will not be used in the analysis and will be removed from the data set later on in the data preparation stage.
+
+### **Dimension of Data Set:**
+
+Let's check out the dimension of our raw data set:
+
+```{r}
+dim(training)
+```
+
+So we can see that we have got 2276 observations and 17 columns which contains `INDEX`, our target variable `TARGET_WINS` and all the features. Now these dimension might not remain the same depending on the steps we carry out during data preparation
+
+### **Descriptive Summary Statistics:**
+
+Before we go ahead with plot the relational plot between target and features. let's check out the descriptive summary for each column. Descriptive summary will give us the mean, median, min, max and quartiles for each column. Descriptive statistics help us to simplify large amounts of data in a sensible way. For instance, finding the average of a column by going through all the 2276 observations could be very hectic thus we use descriptive summary statistics. The code chunk below uses `summary()` function from base R to give all the summary statistics of each column
+
+```{r}
+knitr::kable(summary(training))
+```
+
+As we can see that the table above gave us the summary for even `INDEX` column too. So before moving and waiting for data preparation remove that from our data set. The code chunk below remove the redundant `INDEX` column from our data set.
+
+```{r}
+training <- training[,-1]
+```
+
+### **Plotting the Target Column:**
+
+Before moving ahead with relational plot and correlation between target and features. Let's check out the distribution of of target column `TARGET_WINS`.
+
+```{r}
+ggplot()+
+  geom_histogram(data = training, mapping = aes(x=TARGET_WINS), bins = 50, color = "black", fill = "grey")+geom_vline(xintercept=mean(training$TARGET_WINS), color='red')+labs(x="Target Wins", y="Count",title ="Distribution of Target Wins")+theme_bw()
+```
+
+As we can see that the distribution of `TARGET_WINS` is fairly normal with mean around 80.8 (represented by red vertical line), min at 0 and maximum at 146. We can observe min = 0 is a worry-some, since it is very rare for a team to go win less so there might be something that needs to be corrected in the data. We can also revisit the summary statistics for `TARGET_WINS` column to confirm the figures above.
+
+```{r}
+summary(training$TARGET_WINS)
+```
+
+
+### **Relational Plots Between Target and Feature column:**
+
+Now we can go ahead and plot the relational plot and we can also check the correlation between target and features. One thing must be kept in mind that the correlation might change also carry out data preparation since we still have the uncleaned, dirty data set. As we know that there are at least 15 features in the data set and it will be impractical to plot the relational graph between the target column and each feature column so we will use `pairs.panel` from `psych` library to plot multiple feature on the same graphic. In the graph below our focus will be on the first row and first column. The first row tell us the correlation between `TARGET_WINS` and feature column and similarly the first column show the relational plot between the same columns. On the diagonal we have the distribution of each column.
+
+```{r fig.height=15, fig.width=15}
+Scatter_Matrix <- pairs.panels(training[, c(1, 2:6)], main = "Scatter Plot Matrix for Training Dataset")
+```
+
+
+In the matrix plot above the value in the first row after `TARGET_WINS` distribution plot shows the correlation between `TARGET_WINS` and `TEAM_BATTING_H` which is .39. Similarly the scatter plot below the `TARGET_WINS` distribution is the plot between `TARGET_WINS` and `TEAM_BATTING_H` with fitted regression line in red color. In the matrix above we have only considered the frist 5 features because to avoid over crowdness. For the remaining features we have the matrix plot below:
+
+
+```{r fig.height=15, fig.width=15}
+pairs.panels(training[, c(1, 7:11)], main = "Scatter Plot Matrix for Training Dataset")
+```
+
+```{r fig.height=13, fig.width=13}
+pairs.panels(training[, c(1, 11:16)], main = "Scatter Plot Matrix for Training Dataset")
+```
+
+From the above matrix plots we can see that diagonals have distributions of each features and we can see that some of these distributions contains outliers that needs to be address in our data preparation stage.
+
+### **Missing values:**
+
+Let's check out the missing values in the columns. We will check the number of missing values in each column using the code check below:
+
+```{r}
+knitr::kable(colSums(is.na(training)))
+```
+
+we can see that some the columns has missing values which also needs to be addressed in our data preparation stage.
+
+## **DATA PREPARATION:**
+
+Every data set has some imperfection and so does ours. As we saw in the data exploration section that our data does contains missing values and outliers so let's deal with that. We will try to address both missing values and outliers accordingly.
+
+### **Fixing Missing Values and Outliers:**
+
+#### **Removing Missing values:**
+
+As we saw earlier that some of the feature columns like `TEAM_BATTING_HBP`,`TEAM_BASERUN_CS` and `TEAM_FIELDING_DP` has a lot of missing values and it would be to the best of our interest to remove them from our data set since replacing them might create the issue of fidelity and bias.
+
+```{r}
+training <- training[, !names(training) %in% c('TEAM_BATTING_HBP','TEAM_BASERUN_CS','TEAM_FIELDING_DP')]
+```
+
+So the features with high number of missing values are being removed from the data set. We can check the dimensions now.
+
+```{r}
+dim(training)
+```
+
+#### **Impute Missing values:**
+
+Let's check out the remaining features for missing values 
+
+```{r}
+knitr::kable(colSums(is.na(training)))
+```
+
+As we can see that features like `TEAM_BATTING_SO`,`TEAM_BASERUN_SB` and `TEAM_PITCHING_SO` has some missing values and the least of those missing values are 102 in number which comes up to be 4.5% of the total data set. According to some of the data scientists any data set with 3% or lower missing values can be dealt with by removing the those observations from the analysis. Over here we will try to replace the missing values with median of their respective columns since there is skweness in the distribution and medians are insensitive to skewness.
+
+```{r}
+training$TEAM_BATTING_SO[is.na(training$TEAM_BATTING_SO)] <- median(training$TEAM_BATTING_SO, na.rm = TRUE)
+training$TEAM_BASERUN_SB[is.na(training$TEAM_BASERUN_SB)] <- median(training$TEAM_BASERUN_SB, na.rm = TRUE)
+training$TEAM_PITCHING_SO[is.na(training$TEAM_PITCHING_SO)] <- median(training$TEAM_PITCHING_SO, na.rm = TRUE)
+```
+
+```{r}
+dim(training)
+```
+
+
+#### **Fixing Outliers:**
+
+Looking at the summary and the plots below we see that `PITCHING_H`, `PITCHING_BB`, ``PITCHING_O`, and `FIELDING_E` are all skewed by their outliers. We also have some fields with a few missing values. Our plan to fix that is to pick any value that is 3 standard deviations above the mean and impute them as the median.
+
+```{r}
+training$TEAM_PITCHING_H[training$TEAM_PITCHING_H > 3*sd(training$TEAM_PITCHING_H)] <- median(training$TEAM_PITCHING_H)
+training$TEAM_PITCHING_BB[training$TEAM_PITCHING_BB > 3*sd(training$TEAM_PITCHING_BB)] <- median(training$TEAM_PITCHING_BB)
+training$TEAM_PITCHING_SO[training$TEAM_PITCHING_SO > 3*sd(training$TEAM_PITCHING_SO)] <- median(training$TEAM_PITCHING_SO)
+training$TEAM_FIELDING_E[training$TEAM_FIELDING_E > 3*sd(training$TEAM_FIELDING_E)] <- median(training$TEAM_FIELDING_E)
+
+```
+
+Now that our data set is ready to be used to model here is the final distribution of target and features columns.
+
+#### **Final Distribution Check:**
+
+```{r message=FALSE, warning=FALSE, fig.height=15, fig.width=15}
+ggplot(melt(training), aes(x=value)) + geom_histogram(color = 'black', fill = 'grey') + facet_wrap(~variable, scale='free') + labs(x='', y='Frequency')+theme_bw()
+```
+
+
+## **BUILDING MODELS:**
+
+Our data set is ready to be used for modeling. In this section we will create different models and then based on the statistical significance of the features used in the models. Out of these models that we will create, we are going to select one and use that model to predict using our prediction data set in the next section.
+
+### **Model 1:**
+
+Even though we already know that some the features like `TEAM_PITCHING_BB`, `TEAM_PITCHING_HR` has weak correlation with our target which `TARGET_WINS` but we in our first model we will try to fit all the features in the model and then check there statistical significance. The code chunk below will create our first model
+
+```{r}
+m1 <- lm(TARGET_WINS ~., training)
+```
+
+We can check the intercept and coefficients of the model above using summary function. The summary function also give us the p-value of each coefficient which shows the statistical significance of the that coefficient. So let's apply summary function to our model:
+
+```{r}
+summary(m1)
+```
+
+As we cans see that `TEAM_PITCHING_HR` has a very high p-value which means that it is not statistically significant and it will be in our best interest to remove that from our model. Below are the plots which shows residuals vs fitted values, QQ plot, residuals distributions, standardized residuals and residuals vs leverage.
+
+```{r}
+par(mfrow=c(2,2))
+plot(m1)
+```
+
+```{r}
+
+hist(resid(m1), main="Histogram of Residuals")
+```
+
+### Model 2:
+
+As we saw in model 1 that `TEAM_PITCHING_HR` has a high p-value. Let's create another model without `TEAM_PITCHING_HR`and see how that performs.
+
+```{r}
+m2<- lm(TARGET_WINS~TEAM_BATTING_H+TEAM_BATTING_2B+TEAM_BATTING_3B+TEAM_BATTING_HR+TEAM_BATTING_BB+TEAM_BATTING_SO+TEAM_BASERUN_SB+TEAM_PITCHING_H+TEAM_PITCHING_BB+TEAM_FIELDING_E, training)
+```
+
+Now our model is ready let's check the summary of our model.
+
+```{r}
+summary(m2)
+```
+
+As we can that after removing the `TEAM_PITCHING_HR` from the model our r-squared has dropped down a bit but at the same time features like `TEAM_BATTING_SO` and `TEAM_BATTING_2B` has lost their significance too, with p-values way over .05. So let's remove these from our analysis and create a new model.
+
+```{r}
+par(mfrow=c(2,2))
+plot(m2)
+```
+
+```{r}
+hist(resid(m2), main="Histogram of Residuals")
+```
+
+### Model 3:
+
+In our model 3 we have removed all the three weakly correlated and low statistically significant features from our consideration. The following code chunk contains our model. 
+
+```{r}
+m3<- lm(TARGET_WINS~TEAM_BATTING_H+TEAM_BATTING_3B+TEAM_BATTING_HR+TEAM_BATTING_BB+TEAM_BASERUN_SB+TEAM_PITCHING_H+TEAM_PITCHING_BB+TEAM_FIELDING_E, training)
+```
+
+
+Let's check the summary of our model 3.
+
+```{r}
+summary(m3)
+```
+
+
+As we can see that all the features used in the model 3 are statistically significant. Features like `TEAM_BATTING_H`, `TEAM_BATTING_3B`, `TEAM_BATTING_HR`, `TEAM_BATTING_BB`, `TEAM_BASERUN_SB` and `TEAM_PITCHING_H` which are Base hits  by batters, Triples by batters, homeruns by batters, walks by batters, stolen bases, and hits allowed, respectively, are all contributing positively towards the wins. Similarly, `TEAM_PITCHING_BB` and `TEAM_FIELDING_E` which are walks allowed and errors, respectively, are contributing negatively towards the wins. 
+
+Even though r-square went a touch high but all the features are statistically significant. Below are the plots which shows residuals vs fitted values, QQ plot, residuals distributions, standardized residuals and residuals vs leverage.
+
+```{r}
+par(mfrow=c(2,2))
+plot(m3)
+```
+
+```{r}
+hist(resid(m3), main = "Histogram of Residuals")
+```
+
+## SELECTING MODELS AND PREDICTING:
+
+In this section we will select the model that we are working with and we will use the predicting data to predict the target variable.
+
+### Selecting Models:
+
+We are going with model 3 for prediction since all the feature all statistically significant and there is no weak correlation between the target and features. Another reason why we are not selecting m1 which has all the features and a better r-squared value is the result from analysis of variance (ANOVA). The code chunk below show ANOVA between the biggest model and the samllest model in terms  of features used. 
+
+```{r}
+anova(m1, m3)
+```
+
+As we can see that the p-value is .00203 which below .05, meaning that the null hypothesis can not be rejected. Which in turn means that the results produce by each model i.e. m1 and m3 are not that varied from each other. So we will go with the smaller model in order to save computing power. Below are some of the main features of model 3 (m3)
+
+```{r}
+sum_m3 <- summary(m3)
+RSS <- c(crossprod(m3$residuals))
+MSE <- RSS/length(m3$residuals)
+print(paste0("Mean Squared Error: ", MSE))
+print(paste0("Root MSE: ", sqrt(MSE)))
+print(paste0("Adjusted R-squared: ", sum_m3$adj.r.squared))
+print(paste0("F-statistic: ",sum_m3$fstatistic[1]))
+
+```
+Here is the distribution of the residuals which show no pattern accross the horizontal line.
+
+```{r}
+plot(resid(m3))
+abline(h=0, col=2)
+```
+
+### Predicting the Data:
+
+Now we have selected our model so we can go ahead and load the testing data set to predict the `TARGET_WINS` using m3 model. The following code chunk load the data in our environment.
+
+```{r}
+testing <- read.csv("https://raw.githubusercontent.com/Umerfarooq122/Data_sets/main/moneyball-evaluation-data.csv")
+```
+
+Here is the first few row of our testing data set:
+
+```{r}
+knitr::kable(head(testing))
+```
+
+#### Removing Un-necessary columns:
+
+Let's remove the columns that we do not need for this analysis:
+
+```{r}
+testing <- testing[, !names(testing) %in% c('INDEX','TEAM_BATTING_HBP','TEAM_BASERUN_CS','TEAM_FIELDING_DP')]
+```
+
+```{r}
+knitr::kable(head(testing))
+```
+```{r}
+dim(testing)
+```
+#### Fixing Missing Values:
+
+Let's check out and fix the  missing values in our testing data set:
+
+```{r}
+knitr::kable(colSums(is.na(testing)))
+```
+
+For Imputation we have used MICE package:
+
+```{r message=FALSE, eval=FALSE}
+testing <- mice(testing, m=5, maxit = 5, method = 'pmm')
+testing <- complete(testing)
+```
+
+#### Fixing Outliers:
+
+
+```{r}
+testing$TEAM_PITCHING_H[testing$TEAM_PITCHING_H > 3*sd(testing$TEAM_PITCHING_H)] <- median(testing$TEAM_PITCHING_H)
+testing$TEAM_PITCHING_BB[testing$TEAM_PITCHING_BB > 3*sd(testing$TEAM_PITCHING_BB)] <- median(testing$TEAM_PITCHING_BB)
+testing$TEAM_PITCHING_SO[testing$TEAM_PITCHING_SO > 3*sd(testing$TEAM_PITCHING_SO)] <- median(testing$TEAM_PITCHING_SO)
+testing$TEAM_FIELDING_E[testing$TEAM_FIELDING_E > 3*sd(testing$TEAM_FIELDING_E)] <- median(testing$TEAM_FIELDING_E)
+```
+
+#### Final Prediction:
+
+The following Code chunk predicts the `TARGET_WINS` using testing data set:
+
+```{r}
+final <- predict(m3, newdata = testing, interval="prediction")
+knitr::kable(head(final,3))
+```
+
+The above data set gives us the predicted values. Fit columns contains the fitted values for testing data set while upper and lower column contain the limit values for 95% confidence interval.
+
+## CONCLUSION:
+
+In this particular setting a moderately dirty training data set was given to train a model and then use that model to predict the target variable using testing data set. Initially the data was loaded into the environment and explored through descriptive summary statistics and multiple distribution and relational plots. Data exploration was followed by data preparation stage where the training data was wrangled by dealing with the missing values and outliers. Once the training data set was ready, it was then put forward to create models. Three different models were created based on statistical significance of the features used in the model. After creating models, one model was selected based on ANOVA and statistical significance of the features. The selected model was then applied to the testing data set to predict the final output.
+
+## APPENDIX:
+
